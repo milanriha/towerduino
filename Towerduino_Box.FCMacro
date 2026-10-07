@@ -106,7 +106,7 @@ PORTS = [
     ("Ethernet",        "right",   8.46,  26.26,  0.0, 13.9),
     ("USB-A x2",        "right",  33.18,  48.18,  0.4, 16.4),
     ("HDMI",            "right",  56.26,  61.65,  1.6, 16.4),
-    ("USB-C",           "right",  70.26,  79.20, -1.2,  3.2),
+    ("USB-C",           "right",  69.76,  79.70, -1.2,  4.2),  # +0.5 each side, +1 top (plug fit)
     # 5-pin screw terminal, 5 mm pitch, pins at Y 85.4..105.4:
     # CAN-H, CAN-L | GND | GND, VIN  (Arduino full pinout). Wire entries only;
     # the middle GND (redundant) stays hidden behind the wall.
