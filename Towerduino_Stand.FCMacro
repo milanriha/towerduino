@@ -1,0 +1,164 @@
+# -*- coding: utf-8 -*-
+# Towerduino: tower stand for the Towerduino box, in the style of a mini-PC vertical stand.
+# Copyright (c) 2026 Milan Riha. Licensed under CC BY-SA 4.0 (see LICENSE).
+#
+# The box stands on its short FRONT edge (user button pin hole, Qwiic, knock-out
+# window), camera edge up. Two cheeks hold the floor and the lid faces, flanged
+# feet keep it stable, and the box rests only on two pads at the very ends, so
+# the openings in the front edge stay free (raised LIFT mm above the desk).
+#
+# How to use: FreeCAD > Macro > Macros... > select this file > Execute.
+
+import os
+import FreeCAD as App
+import Part
+
+# ============================== PARAMETERS ==================================
+
+# --- Box (from Towerduino_Box.FCMacro) ---
+BOX_T = 38.0             # thickness: base 35 + lid 3
+BOX_L = 108.8            # length of the edge the box stands on (front edge)
+FIT = 0.5                # total slack in each direction (bigger = looser)
+
+# --- Stand ---
+LIFT = 8.0               # box bottom above the desk (room under the front openings)
+PAD_L = 11.0             # length of the end pads the box rests on (keep < 13 so the
+                         # button pin hole and the Qwiic opening stay uncovered)
+CHEEK_H = 55.0           # how far the cheeks reach up the box faces
+CHEEK_T = 4.0
+CHEEK_TOP_R = 10.0       # rounding of the cheeks' top corners
+END_STOP_H = 5.0         # small lips at both ends so the box can't slide out
+END_STOP_T = 3.0
+FLANGE = 28.0            # foot flanges sticking out from each cheek
+FLANGE_T = 4.0
+FLANGE_R = 8.0           # rounding of the flange corners
+GUSSET = 12.0            # fillet-like gusset between cheek and flange (0 = none)
+
+# Vertical slots in both cheeks so the box's floor vents stay open (either way round).
+# Vertical so only the short tops need to bridge when printing.
+CHEEK_VENTS = True
+CHEEK_VENT_W = 4.0
+CHEEK_VENT_PITCH = 7.0
+CHEEK_VENT_SPAN = (20.0, 89.0)   # along the stand length (box floor vents: ~21.6-85.6)
+CHEEK_VENT_Z = (24.0, 59.5)      # bottom / top of the slots above the desk
+
+# Snap notches for the lid screw heads, which stick out a little: the box clicks
+# into place. Cut into both cheeks so the box can go in either way round.
+SNAP_NOTCHES = True
+# lid screw positions in box coordinates (x along the bottom edge, y up from it),
+# from Towerduino_Box.FCMacro: board corner holes (14.12, 6.6) and (92, 4) + board offset 3.4
+LID_SCREWS = [(3.4 + 14.12, 3.4 + 6.6), (3.4 + 92.0, 3.4 + 4.0)]
+NOTCH_D = 7.0            # at the cheek face (pan head ~5.5 mm)
+NOTCH_D_BOTTOM = 4.0     # at the bottom of the notch: conical, so the head slides in and out
+NOTCH_DEPTH = 1.2
+
+EXPORT_STL = False       # True writes Towerduino_stand.stl next to this macro
+
+# ============================ END PARAMETERS ================================
+
+V = App.Vector
+GAP_X = BOX_T + FIT                      # between the cheeks
+GAP_Y = BOX_L + FIT                      # between the end stops
+LEN = GAP_Y + 2 * END_STOP_T             # stand length along the box edge
+X0 = FLANGE + CHEEK_T                    # inner face of the first cheek
+X1 = X0 + GAP_X                          # inner face of the second cheek
+WIDTH = X1 + CHEEK_T + FLANGE
+TOP = LIFT + CHEEK_H
+
+
+def box(x, y, z, l, w, h):
+    return Part.makeBox(l, w, h, V(x, y, z))
+
+
+def rounded_rect(x, y, z, l, w, h, r):
+    r = max(0.01, min(r, l / 2 - 0.01, w / 2 - 0.01))
+    parts = [box(x + r, y, z, l - 2 * r, w, h), box(x, y + r, z, l, w - 2 * r, h)]
+    for cx in (x + r, x + l - r):
+        for cy in (y + r, y + w - r):
+            parts.append(Part.makeCylinder(r, h, V(cx, cy, z)))
+    return parts[0].fuse(parts[1:])
+
+
+def cheek(x):
+    """Upright plate with rounded top corners."""
+    r = CHEEK_TOP_R
+    body = box(x, 0, 0, CHEEK_T, LEN, TOP - r)
+    body = body.fuse(box(x, r, 0, CHEEK_T, LEN - 2 * r, TOP))
+    for cy in (r, LEN - r):
+        body = body.fuse(Part.makeCylinder(r, CHEEK_T, V(x, cy, TOP - r), V(1, 0, 0)))
+    return body
+
+
+def gusset(x_wall, direction):
+    """Triangular brace between a cheek's outer face and its flange."""
+    g = GUSSET
+    pts = [V(x_wall, 0, FLANGE_T), V(x_wall + direction * g, 0, FLANGE_T),
+           V(x_wall, 0, FLANGE_T + g), V(x_wall, 0, FLANGE_T)]
+    return Part.Face(Part.makePolygon(pts)).extrude(V(0, LEN, 0))
+
+
+def make_stand():
+    parts = [
+        # one footprint plate, rounded only at its outer corners; the middle
+        # between the end pads is cut open below
+        rounded_rect(0, 0, 0, WIDTH, LEN, FLANGE_T, FLANGE_R),
+        cheek(X0 - CHEEK_T),
+        cheek(X1),
+        # end pads the box rests on, joining the two cheeks
+        box(X0 - 0.01, 0, 0, GAP_X + 0.02, END_STOP_T + PAD_L, LIFT),
+        box(X0 - 0.01, LEN - END_STOP_T - PAD_L, 0, GAP_X + 0.02, END_STOP_T + PAD_L, LIFT),
+        # end stops
+        box(X0 - 0.01, 0, 0, GAP_X + 0.02, END_STOP_T, LIFT + END_STOP_H),
+        box(X0 - 0.01, LEN - END_STOP_T, 0, GAP_X + 0.02, END_STOP_T, LIFT + END_STOP_H),
+    ]
+    if GUSSET > 0:
+        parts += [gusset(X0 - CHEEK_T + 0.01, -1), gusset(X1 + CHEEK_T - 0.01, 1)]
+    stand = parts[0].fuse(parts[1:])
+    pad_end = END_STOP_T + PAD_L
+    stand = stand.cut(box(X0, pad_end, -1, GAP_X, LEN - 2 * pad_end, FLANGE_T + 2))
+    if SNAP_NOTCHES:
+        off = END_STOP_T + FIT / 2           # box x=0 in stand coordinates
+        notches = []
+        for bx, by in LID_SCREWS:
+            z = LIFT + by
+            # lid facing the X1 cheek, and box turned round (lid facing the X0 cheek)
+            notches.append(Part.makeCone(NOTCH_D / 2, NOTCH_D_BOTTOM / 2, NOTCH_DEPTH + 0.01,
+                                         V(X1 - 0.01, off + bx, z), V(1, 0, 0)))
+            notches.append(Part.makeCone(NOTCH_D / 2, NOTCH_D_BOTTOM / 2, NOTCH_DEPTH + 0.01,
+                                         V(X0 + 0.01, LEN - off - bx, z), V(-1, 0, 0)))
+        stand = stand.cut(notches[0].fuse(notches[1:]))
+    if CHEEK_VENTS:
+        cuts = []
+        (y0, y1), (z0, z1) = CHEEK_VENT_SPAN, CHEEK_VENT_Z
+        n = int((y1 - y0 - CHEEK_VENT_W) // CHEEK_VENT_PITCH) + 1
+        start = (y0 + y1) / 2 - ((n - 1) * CHEEK_VENT_PITCH + CHEEK_VENT_W) / 2
+        for i in range(n):
+            y = start + i * CHEEK_VENT_PITCH
+            for x in (X0 - CHEEK_T - 1, X1 - 1):
+                cuts.append(box(x, y, z0, CHEEK_T + 2, CHEEK_VENT_W, z1 - z0))
+        stand = stand.cut(cuts[0].fuse(cuts[1:]))
+    return stand.removeSplitter()
+
+
+stand = make_stand()
+
+if __name__ != "__towerduino_export__":
+    doc = App.ActiveDocument or App.newDocument("Towerduino")
+    Part.show(stand, "Towerduino_stand")
+    doc.recompute()
+    try:
+        import FreeCADGui
+        FreeCADGui.SendMsgToActiveView("ViewFit")
+        FreeCADGui.activeDocument().activeView().viewIsometric()
+    except Exception:
+        pass
+    if EXPORT_STL:
+        import MeshPart
+        here = os.path.dirname(os.path.abspath(__file__)) if "__file__" in dir() \
+            else App.getUserMacroDir(True)
+        mesh = MeshPart.meshFromShape(Shape=stand, LinearDeflection=0.05,
+                                      AngularDeflection=0.1)
+        mesh.write(os.path.join(here, "Towerduino_stand.stl"))
+        App.Console.PrintMessage("STL written to %s\n" % here)
+    App.Console.PrintMessage("Towerduino stand: %.1f x %.1f x %.1f mm\n"
+                             % (WIDTH, LEN, TOP))

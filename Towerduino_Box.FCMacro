@@ -1,0 +1,427 @@
+# -*- coding: utf-8 -*-
+# Towerduino: parametric 3D-printable enclosure for the Arduino VENTUNO Q (ABX00181)
+# Copyright (c) 2026 Milan Riha. Licensed under CC BY-SA 4.0 (see LICENSE).
+#
+# How to use: FreeCAD > Macro > Macros... > select this file > Execute.
+# Change the numbers in the PARAMETERS section, save, and run again.
+#
+# All board positions below were measured from Arduino's official STEP model
+# (docs.arduino.cc/resources/models/ABX00181-step.zip) and the datasheet.
+#
+# Board coordinates (same as the STEP file): looking at the component side,
+#   X = 0..100 mm (short edge), Y = 0..160 mm (long edge), Z = 0 on the PCB top.
+#   "right" = X=100 edge: Ethernet, 2x USB-A, HDMI, USB-C, screw terminal, DC jack
+#   "front" = Y=0 edge:   user button, Qwiic connector
+#   "back"  = Y=160 edge: 3x MIPI camera FPC connectors
+#   "left"  = X=0 edge:   nothing
+# Port Z values are relative to the PCB top surface (negative = below it).
+
+import os
+import FreeCAD as App
+import Part
+
+# ============================== PARAMETERS ==================================
+
+# --- Board (official) ---
+BOARD_X = 100.0
+BOARD_Y = 160.0
+BOARD_T = 2.0            # PCB thickness from the STEP model
+BELOW_PCB = 4.6          # deepest bottom-side part below the PCB underside (headers)
+TOP_PARTS = 16.4         # tallest top-side connector (USB-A / HDMI)
+
+# 3.2 mm mounting holes (board coordinates)
+CORNER_HOLES = [(14.12, 6.60), (92.0, 4.0), (3.5, 156.0), (90.0, 156.0)]
+HAT_HOLES = [(3.5, 59.0), (61.5, 59.0)]  # Raspberry Pi HAT holes, not used by default
+USE_HAT_HOLES = False
+
+# --- Enclosure ---
+WALL = 2.4
+FLOOR = 2.0
+CORNER_R = 4.0
+# gap between the board outline and the inner wall, per side.
+# Right side is larger because the connectors stick out up to 2.35 mm past the edge.
+GAP_LEFT = 1.0
+GAP_RIGHT = 3.0
+GAP_FRONT = 1.0
+GAP_BACK = 1.0
+STANDOFF_H = 6.0         # floor to PCB underside (must be > BELOW_PCB)
+STANDOFF_D = 6.0         # post top touching the PCB (copper-free ring around the holes is ~6 mm)
+POST_BASE_D = 10.0       # wider lower part of the post around the screw-head recess
+POST_BASE_H = 3.0        # height of that wider part above the floor
+
+# Mounting with the 4 hex standoffs that ship with the board (25 mm, M3):
+#   M3 screw from under the box -> floor post -> PCB -> bottom of the hex standoff
+#   M3 screw from the top       -> lid         -> top of the hex standoff
+# The lid sits on the standoffs, so the box height follows the standoff length.
+# Set USE_HEX_STANDOFFS = False for a press-fit lid and self-tapping screws instead.
+USE_HEX_STANDOFFS = True
+HEX_STANDOFF_L = 25.0    # included standoff length (measured on the real board)
+SCREW_CLEAR_D = 3.4      # M3 clearance hole
+SCREW_HEAD_D = 6.5       # counterbore for the screw heads under the floor
+SCREW_HEAD_DEPTH = 3.0   # -> use M3 x 12 screws from below
+WALL_TOP_GAP = 0.2       # walls end this far below the standoff tops so the lid clamps
+
+SCREW_PILOT_D = 2.6      # (no standoffs) M3 self-tapping pilot; 4.0 for heat-set inserts
+# (no standoffs) free height above the PCB top
+TOP_SPACE = 40.0
+
+# --- Lid ---
+LID_T = 2.5              # used when LID_FLUSH_WITH_FAN is off
+FAN_TOP = 28.0           # top of the fan above the PCB top (measured)
+LID_FLUSH_WITH_FAN = True  # make the lid exactly thick enough to end level with the fan
+LID_SCREW_CB_D = 6.5     # counterbore for the lid screw heads (0 = none)
+LID_SCREW_CB_DEPTH = 1.5
+# Hex sockets under the lid that fit over the standoff tops, so the standoffs can't
+# turn while the lid screws are tightened. Trimmed where they'd hit the heatsink
+# or a wall (a partial socket still locks the hex).
+HEX_SOCKETS = True
+HEX_AF = 5.6             # standoff size across flats (check your nylon ones, often 5.0 or 5.5)
+HEX_FIT = 0.3            # clearance across flats
+HEX_SOCKET_H = 3.0       # how far the sockets reach down over the standoffs
+HEX_SOCKET_WALL = 1.6
+HEATSINK_CLEAR = 1.0     # keep the sockets this far from the heatsink
+LIP_H = 0.0              # locating lip; 0 = none (with standoffs the screws locate the lid,
+                         # and a lip would hit the USB-A / HDMI connectors)
+LIP_T = 1.6
+LID_FIT = 0.25           # gap between lip and inner wall (bigger = looser)
+
+# Opening in the lid so the heatsink / fan can stick out through it.
+# Heatsink footprint measured on the real board (board coordinates):
+#   ~87 mm along X, flush with the PCB edge at X=0 (88 measured on the board, 87 from the lid fit);
+#   86 mm along Y, ending 9 mm before the camera-connector edge (Y=160).
+FAN_OPENING = True
+HEATSINK = (0.0, 65.0, 87.0, 151.0)   # x0, y0, x1, y1 (x1: gap on the printed lid measured 2.0 mm)
+FAN_CLEARANCE = 1.0                   # gap around the heatsink
+# per-side override: "right" = connector side, tightened to close the visible gap
+FAN_CLEARANCE_SIDES = {"right": 0.6}
+FAN_CORNER_R = 1.5                    # rounded corners matching the heatsink's fillets
+LID_MIN_RIM = WALL                    # the opening never cuts into the lid above the walls
+
+# --- Port cutouts ---
+# (name, side, start, end, z_bottom, z_top[, margin])
+# start/end run along the edge in board coordinates (Y for left/right, X for front/back).
+# The optional 7th value overrides PORT_MARGIN for that opening (0 = exact size).
+PORT_MARGIN = 1.0        # extra clearance added around every opening
+PORTS = [
+    ("Ethernet",        "right",   8.46,  26.26,  0.0, 13.9),
+    ("USB-A x2",        "right",  33.18,  48.18,  0.4, 16.4),
+    ("HDMI",            "right",  56.26,  61.65,  1.6, 16.4),
+    ("USB-C",           "right",  70.26,  79.20, -1.2,  3.2),
+    # 5-pin screw terminal, 5 mm pitch, pins at Y 85.4..105.4:
+    # CAN-H, CAN-L | GND | GND, VIN  (Arduino full pinout). Wire entries only;
+    # the middle GND (redundant) stays hidden behind the wall.
+    ("CAN terminals",   "right",  82.40,  92.90,  0.0,  7.0, 0.0),
+    ("Power terminals", "right",  97.90, 107.90,  0.0,  7.0, 0.0),
+    ("Qwiic",           "front",  18.92,  24.92,  0.0,  3.0),
+    ("Camera 1 FPC",    "back",   10.72,  26.02,  0.0,  2.0),
+    ("Camera 3 FPC",    "back",   38.72,  54.02,  0.0,  2.0),
+    ("Camera 2 FPC",    "back",   66.72,  82.02,  0.0,  2.0),
+]
+# Round openings: (name, side, centre along the edge, centre height above PCB top, diameter)
+ROUND_PORTS = [
+    ("DC jack",         "right", 114.75, 6.5, 11.5),
+    # pin hole for the side-actuated user button (actuator 2.2 mm square,
+    # ~0.65 mm behind the inner wall): press with a paperclip / SIM tool
+    ("User button",     "front",  14.12, 1.7, 2.0),
+]
+# e.g. add "CAN terminals" to close the CAN-H / CAN-L entries if you don't use CAN
+DISABLED_PORTS = []      # names from PORTS / ROUND_PORTS to leave closed, e.g. ["Camera 2 FPC"]
+
+# --- Knock-out windows ---
+# Thin skin flush with the outside of the wall, recessed from the inside, reaching
+# up to the top edge of the wall. Cut it out with a knife to pass cables to the
+# headers; the lid then closes the notch from above.
+# (side, start, end, height) - start/end along the edge in board coordinates.
+KNOCKOUTS = [
+    ("front", 35.7, 55.7, 10.0),   # 20 x 10 mm, centred on the UNO analog header
+]
+KNOCKOUT_SKIN = 0.8      # skin thickness: 0.8 = 2 perimeters with a 0.4 mm nozzle
+
+# --- Ventilation (the SoM needs active cooling: ~25 W under full load) ---
+SOM = (20.13, 79.69, 57.5)   # SoM footprint x, y, size (board coordinates)
+COOLER_SQUARE = (5.4, 70.74, 75.0)  # heatsink standoff square x, y, size
+LID_VENTS = False        # slot grille in the lid over the heatsink (when FAN_OPENING is off)
+WALL_VENTS = True        # slots high up in the left and back walls (fan intake)
+FLOOR_VENTS = True       # slots in the floor
+VENT_W = 2.0
+VENT_PITCH = 5.0
+WALL_VENT_H = 12.0
+
+# --- Optional window in the lid over the LED matrix (front-left of the board) ---
+LED_WINDOW = False
+LED_AREA = (26.0, 6.0, 33.0, 18.0)  # x, y, width, depth in board coordinates
+
+# --- Output ---
+EXPORT_STL = False       # True writes Towerduino_base.stl / Towerduino_lid.stl next to this macro
+BOARD_STEP = ""          # optional path to VENTUNOQ.step for a fit check
+
+# ============================ END PARAMETERS ================================
+
+V = App.Vector
+
+IN_X = GAP_LEFT + BOARD_X + GAP_RIGHT
+IN_Y = GAP_FRONT + BOARD_Y + GAP_BACK
+OUT_X = IN_X + 2 * WALL
+OUT_Y = IN_Y + 2 * WALL
+BX = WALL + GAP_LEFT                     # board origin in box coordinates
+BY = WALL + GAP_FRONT
+PCB_Z = FLOOR + STANDOFF_H               # PCB underside
+PCB_TOP = PCB_Z + BOARD_T
+if USE_HEX_STANDOFFS and LID_FLUSH_WITH_FAN:
+    LID_T = FAN_TOP - HEX_STANDOFF_L
+if USE_HEX_STANDOFFS:
+    BOX_H = PCB_TOP + HEX_STANDOFF_L     # lid underside = standoff tops
+    WALL_H = BOX_H - WALL_TOP_GAP
+else:
+    BOX_H = PCB_TOP + TOP_SPACE          # base height; lid plate sits on top
+    WALL_H = BOX_H
+
+
+def box(x, y, z, l, w, h):
+    return Part.makeBox(l, w, h, V(x, y, z))
+
+
+def cyl(x, y, z, r, h, axis="z"):
+    d = {"x": V(1, 0, 0), "y": V(0, 1, 0), "z": V(0, 0, 1)}[axis]
+    return Part.makeCylinder(r, h, V(x, y, z), d)
+
+
+def rounded_block(x, y, z, l, w, h, r):
+    r = max(0.01, min(r, l / 2 - 0.01, w / 2 - 0.01))
+    parts = [box(x + r, y, z, l - 2 * r, w, h), box(x, y + r, z, l, w - 2 * r, h)]
+    for cx in (x + r, x + l - r):
+        for cy in (y + r, y + w - r):
+            parts.append(cyl(cx, cy, z, r, h))
+    return parts[0].fuse(parts[1:])
+
+
+def union(shapes):
+    return shapes[0].fuse(shapes[1:]) if len(shapes) > 1 else shapes[0]
+
+
+def clean(shape):
+    return shape.removeSplitter() if hasattr(shape, "removeSplitter") else shape
+
+
+def holes():
+    hs = list(CORNER_HOLES) + (list(HAT_HOLES) if USE_HAT_HOLES else [])
+    return [(BX + x, BY + y) for x, y in hs]
+
+
+def ports():
+    """PORTS with the margin filled in: (name, side, a, b, z0, z1, margin)."""
+    return [p if len(p) == 7 else tuple(p) + (PORT_MARGIN,) for p in PORTS]
+
+
+def round_port_cut(side, c, zc, d):
+    r, t, z = d / 2, WALL + 2, PCB_TOP + zc
+    if side == "right":
+        return cyl(OUT_X - WALL - 1, BY + c, z, r, t, "x")
+    if side == "left":
+        return cyl(-1, BY + c, z, r, t, "x")
+    if side == "front":
+        return cyl(BX + c, -1, z, r, t, "y")
+    return cyl(BX + c, OUT_Y - WALL - 1, z, r, t, "y")   # back
+
+
+def port_cut(side, a, b, z0, z1, m):
+    a, b = a - m, b + m
+    z0, h = PCB_TOP + z0 - m, (z1 - z0) + 2 * m
+    t = WALL + 2
+    if side == "right":
+        return box(OUT_X - WALL - 1, BY + a, z0, t, b - a, h)
+    if side == "left":
+        return box(-1, BY + a, z0, t, b - a, h)
+    if side == "front":
+        return box(BX + a, -1, z0, b - a, t, h)
+    return box(BX + a, OUT_Y - WALL - 1, z0, b - a, t, h)   # back
+
+
+def slots_along(side, start, end, z0, h, busy):
+    """Vertical vent slots along one wall, skipping busy (start, end) ranges."""
+    cuts = []
+    p = start
+    while p + VENT_W <= end:
+        if not any(a < p + VENT_W and p < b for a, b in busy):
+            if side == "left":
+                cuts.append(box(-1, p, z0, WALL + 2, VENT_W, h))
+            elif side == "back":
+                cuts.append(box(p, OUT_Y - WALL - 1, z0, VENT_W, WALL + 2, h))
+        p += VENT_PITCH
+    return cuts
+
+
+def make_base():
+    shell = rounded_block(0, 0, 0, OUT_X, OUT_Y, WALL_H, CORNER_R)
+    cavity = rounded_block(WALL, WALL, FLOOR, IN_X, IN_Y, WALL_H,
+                           max(0.5, CORNER_R - WALL))
+    base = shell.cut(cavity)
+    posts = [cyl(x, y, FLOOR - 0.01, STANDOFF_D / 2, STANDOFF_H + 0.01) for x, y in holes()]
+    posts += [cyl(x, y, FLOOR - 0.01, POST_BASE_D / 2, POST_BASE_H + 0.01) for x, y in holes()]
+    base = base.fuse(posts)
+
+    if USE_HEX_STANDOFFS:
+        # through hole + counterbore from below for the screw heads
+        cuts = [cyl(x, y, -1, SCREW_CLEAR_D / 2, PCB_Z + 2) for x, y in holes()]
+        cuts += [cyl(x, y, -1, SCREW_HEAD_D / 2, SCREW_HEAD_DEPTH + 1) for x, y in holes()]
+    else:
+        cuts = [cyl(x, y, FLOOR, SCREW_PILOT_D / 2, STANDOFF_H + 1) for x, y in holes()]
+    for name, side, a, b, z0, z1, m in ports():
+        if name not in DISABLED_PORTS:
+            cuts.append(port_cut(side, a, b, z0, z1, m))
+    for name, side, c, zc, d in ROUND_PORTS:
+        if name not in DISABLED_PORTS:
+            cuts.append(round_port_cut(side, c, zc, d))
+
+    for side, a, b, h in KNOCKOUTS:
+        z0, hh = WALL_H - h, h + 1
+        s = KNOCKOUT_SKIN
+        if side == "front":
+            cuts.append(box(BX + a, s, z0, b - a, WALL, hh))
+        elif side == "back":
+            cuts.append(box(BX + a, OUT_Y - WALL - 1, z0, b - a, 1 + WALL - s, hh))
+        elif side == "left":
+            cuts.append(box(s, BY + a, z0, WALL, b - a, hh))
+        elif side == "right":
+            cuts.append(box(OUT_X - WALL - 1, BY + a, z0, 1 + WALL - s, b - a, hh))
+
+    if WALL_VENTS:
+        vz = WALL_H - LIP_H - 3 - WALL_VENT_H
+        vz = max(vz, PCB_TOP + 4)
+        h = min(WALL_VENT_H, WALL_H - LIP_H - 3 - vz)
+        lo, hi = WALL + CORNER_R + 3, OUT_Y - WALL - CORNER_R - 3
+        cuts += slots_along("left", lo, hi, vz, h, [])
+        busy = []
+        for name, side, a, b, z0, z1, m in ports():
+            if side == "back" and PCB_TOP + z1 + m + 3 > vz:
+                busy.append((BX + a - m - 3, BX + b + m + 3))
+        cuts += slots_along("back", WALL + CORNER_R + 3, OUT_X - WALL - CORNER_R - 3,
+                            vz, h, busy)
+
+    if FLOOR_VENTS:
+        x0, x1 = BX + 18, BX + BOARD_X - 18
+        y = BY + 15
+        while y + VENT_W < BY + BOARD_Y - 15:
+            cuts.append(box(x0, y, -1, x1 - x0, VENT_W, FLOOR + 2))
+            y += VENT_PITCH * 1.5
+
+    return clean(base.cut(union(cuts)))
+
+
+def hexagon(x, y, z, af, h):
+    """Hexagonal prism, flats parallel to the X axis, from z down to z - h."""
+    import math
+    r = af / math.sqrt(3)                 # circumradius
+    pts = [V(x + r * math.cos(math.radians(a)), y + r * math.sin(math.radians(a)), z - h)
+           for a in range(0, 360, 60)]
+    return Part.Face(Part.makePolygon(pts + [pts[0]])).extrude(V(0, 0, h))
+
+
+def hex_sockets(z):
+    inner_af = HEX_AF + HEX_FIT
+    outer_af = inner_af + 2 * HEX_SOCKET_WALL
+    sockets = [hexagon(x, y, z + 0.01, outer_af, HEX_SOCKET_H + 0.01).cut(
+               hexagon(x, y, z + 1, inner_af, HEX_SOCKET_H + 2)) for x, y in holes()]
+    s = union(sockets)
+    # stay inside the cavity, clear of the walls
+    g = 0.3
+    s = s.common(box(WALL + g, WALL + g, z - HEX_SOCKET_H - 1,
+                     IN_X - 2 * g, IN_Y - 2 * g, HEX_SOCKET_H + 2))
+    # and clear of the heatsink
+    x0, y0, x1, y1 = HEATSINK
+    c = HEATSINK_CLEAR
+    s = s.cut(box(BX + x0 - c, BY + y0 - c, z - HEX_SOCKET_H - 1,
+                  x1 - x0 + 2 * c, y1 - y0 + 2 * c, HEX_SOCKET_H + 2))
+    return s
+
+
+def make_lid():
+    """Lid in assembled position (plate on top of the base, lip pointing down)."""
+    z = BOX_H
+    lid = rounded_block(0, 0, z, OUT_X, OUT_Y, LID_T, CORNER_R)
+    if LIP_H > 0:
+        lx, ly = IN_X - 2 * LID_FIT, IN_Y - 2 * LID_FIT
+        r_in = max(0.5, CORNER_R - WALL - LID_FIT)
+        lip_out = rounded_block(WALL + LID_FIT, WALL + LID_FIT, z - LIP_H,
+                                lx, ly, LIP_H + 0.01, r_in)
+        lip_in = rounded_block(WALL + LID_FIT + LIP_T, WALL + LID_FIT + LIP_T,
+                               z - LIP_H - 1, lx - 2 * LIP_T, ly - 2 * LIP_T,
+                               LIP_H + 1.01, max(0.3, r_in - LIP_T))
+        lid = lid.fuse(lip_out.cut(lip_in))
+
+    if USE_HEX_STANDOFFS and HEX_SOCKETS:
+        lid = lid.fuse(hex_sockets(z))
+
+    cuts = []
+    if USE_HEX_STANDOFFS:
+        cuts += [cyl(x, y, z - HEX_SOCKET_H - 1, SCREW_CLEAR_D / 2,
+                     LID_T + HEX_SOCKET_H + 2) for x, y in holes()]
+        if LID_SCREW_CB_D > 0:
+            cuts += [cyl(x, y, z + LID_T - LID_SCREW_CB_DEPTH, LID_SCREW_CB_D / 2,
+                         LID_SCREW_CB_DEPTH + 1) for x, y in holes()]
+    if FAN_OPENING:
+        x0, y0, x1, y1 = HEATSINK
+        c = lambda side: FAN_CLEARANCE_SIDES.get(side, FAN_CLEARANCE)
+        x0 = max(BX + x0 - c("left"), LID_MIN_RIM)
+        y0 = max(BY + y0 - c("front"), LID_MIN_RIM)
+        x1 = min(BX + x1 + c("right"), OUT_X - LID_MIN_RIM)
+        y1 = min(BY + y1 + c("back"), OUT_Y - LID_MIN_RIM)
+        cuts.append(rounded_block(x0, y0, z - 1, x1 - x0, y1 - y0, LID_T + 2,
+                                  FAN_CORNER_R))
+    if LID_VENTS and not FAN_OPENING:
+        cx, cy, s = COOLER_SQUARE
+        y = 0.0
+        while y + VENT_W <= s:
+            cuts.append(box(BX + cx, BY + cy + y, z - 1, s, VENT_W, LID_T + 2))
+            y += VENT_PITCH * 0.8
+    if LED_WINDOW:
+        x, y, w, d = LED_AREA
+        cuts.append(box(BX + x, BY + y, z - 1, w, d, LID_T + 2))
+    if cuts:
+        lid = lid.cut(union(cuts))
+    return clean(lid)
+
+
+def lid_print_orientation(lid):
+    """Flip the lid so the plate lies on the print bed."""
+    p = lid.copy()
+    p.rotate(V(OUT_X / 2, OUT_Y / 2, BOX_H + LID_T / 2), V(1, 0, 0), 180)
+    p.translate(V(0, 0, -p.BoundBox.ZMin))
+    return p
+
+
+base = make_base()
+lid = make_lid()
+
+if __name__ != "__towerduino_export__":
+    doc = App.ActiveDocument or App.newDocument("Towerduino")
+    Part.show(base, "Towerduino_Base")
+    Part.show(lid, "Towerduino_Lid")
+
+    if BOARD_STEP and os.path.exists(BOARD_STEP):
+        board = Part.read(BOARD_STEP)
+        board.translate(V(BX, BY, PCB_TOP))   # STEP origin = board corner, PCB top at Z=0
+        Part.show(board, "VENTUNO_Q_fit_check")
+
+    doc.recompute()
+    try:
+        import FreeCADGui
+        FreeCADGui.SendMsgToActiveView("ViewFit")
+        FreeCADGui.activeDocument().activeView().viewIsometric()
+    except Exception:
+        pass
+
+    if EXPORT_STL:
+        import MeshPart
+        here = os.path.dirname(os.path.abspath(__file__)) if "__file__" in dir() \
+            else App.getUserMacroDir(True)
+        for shape, name in ((base, "Towerduino_base.stl"),
+                            (lid_print_orientation(lid), "Towerduino_lid.stl")):
+            mesh = MeshPart.meshFromShape(Shape=shape, LinearDeflection=0.05,
+                                          AngularDeflection=0.1)
+            mesh.write(os.path.join(here, name))
+        App.Console.PrintMessage("STL files written to %s\n" % here)
+
+    App.Console.PrintMessage(
+        "Towerduino box: outside %.1f x %.1f x %.1f mm (base %.1f + lid %.1f)\n"
+        % (OUT_X, OUT_Y, BOX_H + LID_T, BOX_H, LID_T))

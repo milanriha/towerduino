@@ -1,0 +1,8 @@
+.DS_Store
+*.FCStd1
+*.FCBak
+__pycache__/
+# local working files
+*.3mf
+Towerduino_box_preview.png
+Towerduino_stand_preview.png
