@@ -2,7 +2,9 @@
 
 A 3D-printable tower enclosure for the **Arduino VENTUNO Q** (ABX00181), with a matching vertical stand.
 
-![Towerduino on its stand](images/towerduino.jpg)
+| Fan side | Connector side |
+|---|---|
+| ![Towerduino on its stand, fan and vent side](images/towerduino.jpg) | ![Towerduino connector side: DC jack, screw terminals, USB-C, HDMI, 2× USB-A, Ethernet](images/towerduino_back.jpg) |
 
 The box is a two-part case (base and lid) designed as parametric FreeCAD macros. Every port position was measured from Arduino's official 3D model, and the design was test-printed and fitted on a real board. The lid sits flush with the top of the board's own heatsink and fan. The stand holds the box upright like a mini PC and snaps onto the lid screw heads.
 
