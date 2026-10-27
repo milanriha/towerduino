@@ -85,6 +85,18 @@ LIP_H = 0.0              # locating lip; 0 = none (with standoffs the screws loc
 LIP_T = 1.6
 LID_FIT = 0.25           # gap between lip and inner wall (bigger = looser)
 
+# --- Printable hex standoffs ---
+# Plastic stand-ins for the metal / nylon standoffs, e.g. until proper ones arrive.
+# Same length and size as the real ones, so they fit the posts and lid sockets
+# unchanged. The screws cut their own thread into the pilot holes (print in
+# ABS/PETG/ASA, 100 % infill or 4+ walls). They print lying on a flat face, so the
+# layers run along the screw axis and the screws can't pull them apart.
+PRINTED_STANDOFFS = True     # also build Towerduino_standoffs.stl (4 pieces)
+PRINTED_STANDOFF_AF = HEX_AF # across flats; matches the lid hex sockets
+PRINTED_STANDOFF_PILOT = 2.6 # M3 self-tapping pilot (2.5 = tighter, 4.0 = heat-set inserts)
+PRINTED_STANDOFF_CHAMFER = 0.5  # lead-in on the pilot holes and edges
+PRINTED_STANDOFF_COUNT = 4
+
 # Opening in the lid so the heatsink / fan can stick out through it.
 # Heatsink footprint measured on the real board (board coordinates):
 #   ~87 mm along X, flush with the PCB edge at X=0 (88 measured on the board, 87 from the lid fit);
@@ -152,7 +164,7 @@ LED_WINDOW = False
 LED_AREA = (26.0, 6.0, 33.0, 18.0)  # x, y, width, depth in board coordinates
 
 # --- Output ---
-EXPORT_STL = False       # True writes Towerduino_base.stl / Towerduino_lid.stl next to this macro
+EXPORT_STL = False       # True writes the base, lid (and standoff) STLs next to this macro
 BOARD_STEP = ""          # optional path to VENTUNOQ.step for a fit check
 
 # ============================ END PARAMETERS ================================
@@ -382,6 +394,41 @@ def make_lid():
     return clean(lid)
 
 
+def make_standoff(x, y, z):
+    """One printable hex standoff standing upright with its bottom at (x, y, z)."""
+    L, af, c = HEX_STANDOFF_L, PRINTED_STANDOFF_AF, PRINTED_STANDOFF_CHAMFER
+    s = hexagon(x, y, z + L, af, L)
+    if c > 0:
+        # small edge chamfers against elephant's foot and sharp corners
+        s = s.makeChamfer(c * 0.6, [e for e in s.Edges
+                                    if abs(e.Vertexes[0].Z - e.Vertexes[1].Z) < 1e-6])
+    r = PRINTED_STANDOFF_PILOT / 2
+    hole = cyl(x, y, z - 1, r, L + 2)
+    if c > 0:
+        hole = hole.fuse([Part.makeCone(r + c, r, c, V(x, y, z), V(0, 0, 1)),
+                          Part.makeCone(r, r + c, c, V(x, y, z + L - c), V(0, 0, 1))])
+    return clean(s.cut(hole))
+
+
+def standoffs_assembled():
+    """Printed standoffs in place on the board, for the fit check."""
+    return union([make_standoff(x, y, PCB_TOP) for x, y in holes()])
+
+
+def standoffs_print_layout():
+    """PRINTED_STANDOFF_COUNT standoffs lying on a flat face, side by side."""
+    af, L = PRINTED_STANDOFF_AF, HEX_STANDOFF_L
+    pieces = []
+    for i in range(PRINTED_STANDOFF_COUNT):
+        p = make_standoff(0, 0, 0)
+        p.rotate(V(0, 0, 0), V(1, 0, 0), 90)    # axis along -Y, flats now on Z = +-af/2
+        p.translate(V(i * (af / 0.866 + 5), L, af / 2))
+        pieces.append(p)
+    out = union(pieces)
+    out.translate(V(-out.BoundBox.XMin, 0, -out.BoundBox.ZMin))
+    return out
+
+
 def lid_print_orientation(lid):
     """Flip the lid so the plate lies on the print bed."""
     p = lid.copy()
@@ -392,6 +439,7 @@ def lid_print_orientation(lid):
 
 base = make_base()
 lid = make_lid()
+standoffs = standoffs_print_layout() if PRINTED_STANDOFFS else None
 
 if __name__ != "__towerduino_export__":
     doc = App.ActiveDocument or App.newDocument("Towerduino")
@@ -402,6 +450,11 @@ if __name__ != "__towerduino_export__":
         board = Part.read(BOARD_STEP)
         board.translate(V(BX, BY, PCB_TOP))   # STEP origin = board corner, PCB top at Z=0
         Part.show(board, "VENTUNO_Q_fit_check")
+    if PRINTED_STANDOFFS:
+        Part.show(standoffs_assembled(), "Towerduino_Standoffs_assembled")
+        printed = standoffs.copy()
+        printed.translate(V(OUT_X + 15, 0, 0))   # print layout next to the box
+        Part.show(printed, "Towerduino_Standoffs_print")
 
     doc.recompute()
     try:
@@ -415,8 +468,11 @@ if __name__ != "__towerduino_export__":
         import MeshPart
         here = os.path.dirname(os.path.abspath(__file__)) if "__file__" in dir() \
             else App.getUserMacroDir(True)
-        for shape, name in ((base, "Towerduino_base.stl"),
-                            (lid_print_orientation(lid), "Towerduino_lid.stl")):
+        parts = [(base, "Towerduino_base.stl"),
+                 (lid_print_orientation(lid), "Towerduino_lid.stl")]
+        if PRINTED_STANDOFFS:
+            parts.append((standoffs, "Towerduino_standoffs.stl"))
+        for shape, name in parts:
             mesh = MeshPart.meshFromShape(Shape=shape, LinearDeflection=0.05,
                                           AngularDeflection=0.1)
             mesh.write(os.path.join(here, name))

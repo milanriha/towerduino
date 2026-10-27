@@ -16,6 +16,7 @@ The box is a two-part case (base and lid) designed as parametric FreeCAD macros.
 - Mounts on the four corner holes using the hex standoffs: screws from below through the floor, lid screws into the standoff tops. Hex sockets under the lid stop the standoffs turning while you tighten them.
 - Vent slots in the walls and floor.
 - Optional knock-out window: a 20 × 10 mm panel with a 0.8 mm skin, flush with the outside of the front wall. Cut it out with a knife to route cables to the headers.
+- Optional printable hex standoffs, as a stand-in until metal or nylon ones arrive.
 - Tower stand with vent slots in the cheeks and snap notches for the lid screw heads. Openings in the bottom edge stay clear.
 
 | Box | Stand |
@@ -31,6 +32,7 @@ The box is a two-part case (base and lid) designed as parametric FreeCAD macros.
 | `Towerduino_base.stl` | Box base, ready to print |
 | `Towerduino_lid.stl` | Lid, already flipped for printing (top face on the bed) |
 | `Towerduino_stand.stl` | Tower stand |
+| `Towerduino_standoffs.stl` | Optional: four printable hex standoffs, laid out for printing |
 | `Towerduino_Box.FCMacro` | Parametric FreeCAD source for the base and lid |
 | `Towerduino_Stand.FCMacro` | Parametric FreeCAD source for the stand |
 
@@ -41,6 +43,8 @@ The box is a two-part case (base and lid) designed as parametric FreeCAD macros.
 | 4 | M3 hex standoff, 25 mm, female-female | **Nylon recommended.** The corner hole next to the Qwiic connector has 0.127 mm tracks about 1.4 mm from the hole edge, inside the area a metal standoff covers. The metal standoffs that ship with the board also work, but the solder mask is all that separates them from the copper. |
 | 4 | M3 × 12 screw | From below, through the floor posts and the board into the standoffs. The heads sit recessed in the floor. |
 | 4 | M3 × 6 screw | Through the lid into the standoff tops. The heads sit in 1.5 mm recesses. |
+
+No standoffs at hand? Print `Towerduino_standoffs.stl` instead. The four printed standoffs are 25 mm long and 5.6 mm across flats, so they fit the floor posts and the lid sockets like the real ones. Both screws cut their own thread into the 2.6 mm pilot holes, so drive them in gently and don't over-tighten. Plastic also keeps the copper next to the Qwiic hole safe.
 
 The hex sockets in the lid are sized for 5.6 mm across flats. Many nylon standoffs are 5.0 or 5.5 mm, so measure yours and set `HEX_AF` in the box macro if they differ.
 
@@ -53,8 +57,9 @@ The prototype was printed in transparent ABS on a QIDI printer with these settin
 - 5 mm brim, outer only
 - No supports needed for any part
 - Let the parts cool in the closed chamber before removing them
+- Printed standoffs: 100 % infill (or at least 4 walls) and no brim. They lie on a flat face so the layers run along the screw axis, which keeps the screws from pulling them apart.
 
-The base prints floor down and the lid prints top face down. All three parts print as exported.
+The base prints floor down and the lid prints top face down. All parts print as exported.
 
 ## Assembly
 
@@ -71,6 +76,7 @@ Open a macro in FreeCAD (Macro → Macros… → Execute). All settings are in t
 - `KNOCKOUTS`, `KNOCKOUT_SKIN`: add, move or resize knock-out windows.
 - `HEX_STANDOFF_L`, `FAN_TOP`, `HEATSINK`: adapt the box to a different standoff length or cooler.
 - `HEX_AF`: across-flats size of your standoffs.
+- `PRINTED_STANDOFFS`, `PRINTED_STANDOFF_PILOT`: printable standoffs on or off, and their pilot hole (2.5 for a tighter thread, 4.0 for M3 heat-set inserts).
 - `BOARD_STEP`: path to Arduino's STEP model to show the board inside the box for a fit check.
 
 Tested with FreeCAD 1.1.3. The macros only use basic Part workbench shapes and should also run on 0.21.
