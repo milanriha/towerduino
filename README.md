@@ -40,7 +40,7 @@ The box is a two-part case (base and lid) designed as parametric FreeCAD macros.
 
 | Qty | Part | Notes |
 |---|---|---|
-| 4 | M3 hex standoff, 25 mm, female-female | **Nylon recommended.** The corner hole next to the Qwiic connector has 0.127 mm tracks about 1.4 mm from the hole edge, inside the area a metal standoff covers. The metal standoffs that ship with the board also work, but the solder mask is all that separates them from the copper. |
+| 4 | M3 hex standoff, 25 mm, female-female | **Nylon recommended.** The corner hole next to the Qwiic connector has 0.127 mm tracks about 1.4 mm from the hole edge, inside the area a metal standoff covers. The metal standoffs also work, but the solder mask is all that separates them from the copper. |
 | 4 | M3 × 12 screw | From below, through the floor posts and the board into the standoffs. The heads sit recessed in the floor. |
 | 4 | M3 × 6 screw | Through the lid into the standoff tops. The heads sit in 1.5 mm recesses. |
 

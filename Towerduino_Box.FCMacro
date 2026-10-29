@@ -49,13 +49,13 @@ STANDOFF_D = 6.0         # post top touching the PCB (copper-free ring around th
 POST_BASE_D = 10.0       # wider lower part of the post around the screw-head recess
 POST_BASE_H = 3.0        # height of that wider part above the floor
 
-# Mounting with the 4 hex standoffs that ship with the board (25 mm, M3):
+# Mounting with 4 hex standoffs (25 mm, M3):
 #   M3 screw from under the box -> floor post -> PCB -> bottom of the hex standoff
 #   M3 screw from the top       -> lid         -> top of the hex standoff
 # The lid sits on the standoffs, so the box height follows the standoff length.
 # Set USE_HEX_STANDOFFS = False for a press-fit lid and self-tapping screws instead.
 USE_HEX_STANDOFFS = True
-HEX_STANDOFF_L = 25.0    # included standoff length (measured on the real board)
+HEX_STANDOFF_L = 25.0    # standoff length
 SCREW_CLEAR_D = 3.4      # M3 clearance hole
 SCREW_HEAD_D = 6.5       # counterbore for the screw heads under the floor
 SCREW_HEAD_DEPTH = 3.0   # -> use M3 x 12 screws from below
